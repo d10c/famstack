@@ -539,6 +539,12 @@ Open WebUI: a ChatGPT-style interface for your local LLM.
 ./stack up chatai
 ```
 
+The container follows Open WebUI's `0.13` line, allowing patch updates only.
+Back up its data before changing version lines. An installation created by
+the old `main` image may have a newer database schema than a stable image
+can read; do not assume it can be downgraded. If its history is disposable,
+stop ChatAI and set its old data aside before creating a fresh installation.
+
 | | |
 |---|---|
 | Port | `42050` |

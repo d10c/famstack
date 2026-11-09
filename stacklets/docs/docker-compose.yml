@@ -122,7 +122,7 @@ services:
 
   stack-docs-gotenberg:
     container_name: stack-docs-gotenberg
-    image: gotenberg/gotenberg:8.37
+    image: gotenberg/gotenberg:8.40
     labels:
       - "com.centurylinklabs.watchtower.enable=${WATCHTOWER_ENABLE:-true}"
       - "stack.commit=${STACK_COMMIT:-unknown}"
@@ -136,7 +136,7 @@ services:
 
   stack-docs-tika:
     container_name: stack-docs-tika
-    image: apache/tika:4.0.0
+    image: apache/tika:4.2.0
     labels:
       - "com.centurylinklabs.watchtower.enable=${WATCHTOWER_ENABLE:-true}"
       - "stack.commit=${STACK_COMMIT:-unknown}"
