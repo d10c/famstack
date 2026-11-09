@@ -24,7 +24,9 @@ ARG QUARTZ_TAG=v4.5.2
 # `coreutils` gives us GNU `env`: Quartz's CLI shebang uses
 # `#!/usr/bin/env -S node ...`, and BusyBox's `env` (Alpine's default)
 # doesn't understand `-S`, so the container crash-loops without it.
-RUN apk add --no-cache git tini coreutils
+# The CDN can truncate the community index; use Alpine's official mirror.
+RUN sed -i 's|https://dl-cdn.alpinelinux.org/alpine|https://dl-2.alpinelinux.org/alpine|g' /etc/apk/repositories \
+ && apk add --no-cache git tini coreutils
 
 WORKDIR /app
 
