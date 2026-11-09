@@ -21,8 +21,8 @@ domain = ""
 # for the bare domain, from Let's Encrypt. Caddy proves you own the domain by
 # writing a DNS record through your DNS provider's API, so nothing has to be
 # reachable from the internet. The domain must be one you own at the provider.
-#   "hetzner" or "cloudflare". Empty serves plain HTTP.
-# `stack up infra` asks for the API token; `stack infra dns-token` replaces it.
+#   "hetzner", "cloudflare" or "route53". Empty serves plain HTTP.
+# `stack up infra` asks for credentials; `stack infra dns-token` replaces them.
 dns_provider = ""
 
 # Absolute path where all persistent data lives: databases, uploads, config.
@@ -61,6 +61,19 @@ timezone = "UTC"
 # Supported: "en", "de" (for now).
 # Change it and run: stack restart docs  (re-seeds missing tags, might require a tag cleanup)
 language = "en"
+
+[infra]
+# Caddy's host interface for ports 80/TCP and 443/TCP+UDP. Restrict to a VPN
+# by setting its IPv4 address here. AdGuard DNS bindings are independent.
+proxy_bind_ip = "0.0.0.0"
+
+# Optional DNS servers for certificate checks, independent of AdGuard.
+# For split DNS, e.g. ["1.1.1.1"]. Empty uses Caddy's default resolver.
+dns_resolvers = []
+
+# Route53's AWS region. Credentials belong in `stack infra dns-token`,
+# never in this file.
+aws_region = "us-east-1"
 
 [updates]
 # When Watchtower runs its nightly image update check.

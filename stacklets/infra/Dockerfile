@@ -18,7 +18,8 @@
 FROM caddy:2.11-builder AS builder
 RUN xcaddy build \
     --with github.com/caddy-dns/hetzner/v2@v2.0.1 \
-    --with github.com/caddy-dns/cloudflare@v0.2.4
+    --with github.com/caddy-dns/cloudflare@v0.2.4 \
+    --with github.com/caddy-dns/route53@v1.6.2
 
 FROM caddy:2.11
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

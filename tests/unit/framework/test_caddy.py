@@ -116,7 +116,19 @@ class TestDnsProvider:
         """Caddy would reject a provider it has no plugin for, and only
         once the file is already in place."""
         with pytest.raises(ValueError, match="hetzner.*cloudflare"):
-            assemble([], dns_provider="route53")
+            assemble([], dns_provider="unsupported")
+
+    def test_route53_uses_the_aws_environment_not_a_single_token(self):
+        caddyfile = assemble([], dns_provider="route53")
+        assert "\t\tdns route53\n" in caddyfile
+        assert "DNS_API_TOKEN" not in caddyfile
+        assert "AWS_SECRET_ACCESS_KEY" not in caddyfile
+
+    def test_explicit_resolvers_check_public_dns_instead_of_local_rewrites(self):
+        caddyfile = assemble([], dns_provider="route53",
+                             dns_resolvers=["1.1.1.1", "9.9.9.9"])
+        assert "\t\tresolvers 1.1.1.1 9.9.9.9\n" in caddyfile
+        assert "resolvers" not in assemble([], dns_provider="route53")
 
 
 def _stack(tmp_path, core: str, stacklets: dict[str, str] | None = None):
@@ -229,6 +241,17 @@ RELOAD = ("stack-infra-caddy", "caddy", "reload", "--config", "/etc/caddy/Caddyf
 
 
 class TestLifecycle:
+
+    def test_certificate_dns_checks_use_the_configured_resolvers(self, tmp_path, docker):
+        cli, _ = _make_cli(tmp_path)
+        config = tmp_path / "stack.toml"
+        config.write_text(config.read_text() +
+                          'dns_provider = "route53"\n[infra]\ndns_resolvers = ["1.1.1.1"]\n')
+        docker.states = {"infra": "running"}
+
+        assert cli.up("photos")["ok"]
+
+        assert "\t\tresolvers 1.1.1.1\n" in _caddyfile(tmp_path).read_text()
 
     def test_up_routes_the_stacklet_it_starts(self, tmp_path, docker):
         """The Caddyfile is written before the stacklet's containers start,
@@ -356,8 +379,8 @@ class TestLifecycle:
         before = _caddyfile(tmp_path).read_text()
 
         config = tmp_path / "stack.toml"
-        config.write_text(config.read_text() + 'dns_provider = "route53"\n')
+        config.write_text(config.read_text() + 'dns_provider = "unsupported"\n')
         cli.down("docs")
 
         assert _caddyfile(tmp_path).read_text() == before
-        assert any("route53" in w for w in output.warnings)
+        assert any("unsupported" in w for w in output.warnings)

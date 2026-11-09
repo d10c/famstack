@@ -61,6 +61,15 @@ _PLAIN_HTTP = """\
 DNS_PROVIDERS = {
     "hetzner": ("propagation_delay 30s", "propagation_timeout 5m"),
     "cloudflare": (),
+    "route53": (),
+}
+
+# Secret names consumed by each provider. Route53 uses the AWS SDK's
+# environment credentials rather than Caddy's single-token argument.
+DNS_CREDENTIALS = {
+    "hetzner": ("DNS_API_TOKEN",),
+    "cloudflare": ("DNS_API_TOKEN",),
+    "route53": ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"),
 }
 
 # The token is read from Caddy's environment when a certificate is
@@ -77,7 +86,7 @@ _UNKNOWN_HOSTS = """\
 """
 
 
-def _global_options(dns_provider: str) -> str:
+def _global_options(dns_provider: str, dns_resolvers: list[str]) -> str:
     """Global options: certificates through the DNS provider, or none."""
     if not dns_provider:
         return _PLAIN_HTTP
@@ -85,19 +94,24 @@ def _global_options(dns_provider: str) -> str:
         raise ValueError(
             f"dns_provider '{dns_provider}' is not supported; "
             f"use {' or '.join(DNS_PROVIDERS)}, or leave it empty for plain HTTP")
-    lines = [f"dns {dns_provider} {_TOKEN}", *DNS_PROVIDERS[dns_provider]]
+    authentication = "" if dns_provider == "route53" else f" {_TOKEN}"
+    lines = [f"dns {dns_provider}{authentication}", *DNS_PROVIDERS[dns_provider]]
+    if dns_resolvers:
+        lines.append(f"resolvers {' '.join(dns_resolvers)}")
     body = "".join(f"\t\t{line}\n" for line in lines)
     return f"{{\n\tcert_issuer acme {{\n{body}\t}}\n}}\n"
 
 
-def assemble(snippets: list[tuple[str, str]], dns_provider: str = "") -> str:
+def assemble(snippets: list[tuple[str, str]], dns_provider: str = "",
+             dns_resolvers: list[str] | None = None) -> str:
     """The Caddyfile for these `(source, snippet)` pairs, in order.
 
     A source is the stacklet a snippet came from, or `LOCAL_FILE`.
+    `dns_resolvers` overrides the DNS servers used for certificate checks.
 
     Raises ValueError for a DNS provider the infra image has no plugin for.
     """
-    parts = [_HEADER, _global_options(dns_provider), _UNKNOWN_HOSTS]
+    parts = [_HEADER, _global_options(dns_provider, dns_resolvers or []), _UNKNOWN_HOSTS]
     for source, snippet in snippets:
         parts.append(f"# ── {source} ──\n\n{snippet.strip()}\n")
     return "\n".join(parts)

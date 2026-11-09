@@ -380,6 +380,8 @@ class Stack:
             "domain":                self._cfg("core", "domain"),
             "language":              self._cfg("core", "language", self._cfg("ai", "language", "en")),
             "timezone":              self._cfg("core", "timezone", "UTC"),
+            "infra_proxy_bind_ip":   self._cfg("infra", "proxy_bind_ip", "0.0.0.0"),
+            "infra_aws_region":      self._cfg("infra", "aws_region", "us-east-1"),
             # Name of the shared bucket inside the memory vault. Personal
             # entities live at <vault>/<slug>/, the shared bucket at
             # <vault>/<shared_bucket>/. Defaults to "family"; deployments
@@ -1068,7 +1070,9 @@ class Stack:
             snippets.append((caddy.LOCAL_FILE, local.read_text()))
 
         try:
-            caddyfile = caddy.assemble(snippets, self._cfg("core", "dns_provider"))
+            caddyfile = caddy.assemble(
+                snippets, self._cfg("core", "dns_provider"),
+                self.config.get("infra", {}).get("dns_resolvers", []))
         except ValueError as e:
             self.output.warn(f"Caddyfile not updated: {e}")
             return None

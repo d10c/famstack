@@ -111,7 +111,87 @@ def test_plain_http_needs_no_token(stack):
 
 
 def test_start_refuses_a_provider_the_image_has_no_plugin_for(stack, monkeypatch):
-    stck = stack(dns_provider="route53")
+    stck = stack(dns_provider="unsupported")
     _dns_token(stck, TOKEN + "\n", monkeypatch)
-    with pytest.raises(RuntimeError, match="route53"):
+    with pytest.raises(RuntimeError, match="unsupported"):
         _start(stck)
+
+
+def test_route53_credentials_are_stored_without_echoing_them(stack, monkeypatch, capsys):
+    stck = stack(dns_provider="route53")
+    access_key = "AKIATESTEXAMPLE"
+    secret_key = "fabricated-aws-secret"
+    result = _dns_token(stck, f"{access_key}\n{secret_key}\n", monkeypatch)
+    assert "error" not in result
+    assert stck.secrets.get("infra", "AWS_ACCESS_KEY_ID") == access_key
+    assert stck.secrets.get("infra", "AWS_SECRET_ACCESS_KEY") == secret_key
+    output = repr(result) + repr(capsys.readouterr())
+    assert access_key not in output
+    assert secret_key not in output
+    _start(stck)
+    env = stck.env("infra")
+    assert env["AWS_ACCESS_KEY_ID"] == access_key
+    assert env["AWS_SECRET_ACCESS_KEY"] == secret_key
+    assert env["AWS_REGION"] == "us-east-1"
+
+
+def test_an_incomplete_route53_rotation_keeps_both_old_credentials(stack, monkeypatch):
+    stck = stack(dns_provider="route53")
+    _dns_token(stck, "old-access\nold-secret\n", monkeypatch)
+    result = _dns_token(stck, "new-access\n", monkeypatch)
+    assert "error" in result
+    assert stck.secrets.get("infra", "AWS_ACCESS_KEY_ID") == "old-access"
+    assert stck.secrets.get("infra", "AWS_SECRET_ACCESS_KEY") == "old-secret"
+
+
+@pytest.mark.parametrize("missing", ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"])
+def test_route53_needs_both_credentials_even_with_another_providers_token(stack, missing):
+    stck = stack(dns_provider="route53")
+    stck.secrets.set("infra", "DNS_API_TOKEN", TOKEN)
+    other = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"} - {missing}
+    for key in other:
+        stck.secrets.set("infra", key, "fabricated")
+    with pytest.raises(RuntimeError, match="stack infra dns-token"):
+        _start(stck)
+
+
+def test_proxy_settings_are_derived_from_config_without_changing_backend_access(stack, tmp_path):
+    stck = stack()
+    assert stck.env("infra")["PROXY_BIND_IP"] == "0.0.0.0"
+    config = tmp_path / "stack.toml"
+    config.write_text(config.read_text() +
+                      '\n[infra]\nproxy_bind_ip = "100.64.0.10"\naws_region = "eu-west-1"\n')
+    env = stck.env("infra")
+    assert env["PROXY_BIND_IP"] == "100.64.0.10"
+    assert env["PORT_BIND_IP"] == "127.0.0.1"
+    assert env["AWS_REGION"] == "eu-west-1"
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_route53_first_run_asks_only_if_aws_credentials_are_missing(stack, monkeypatch, configured):
+    """A token left over from another provider must not suppress AWS setup."""
+    import getpass
+
+    stck = stack(dns_provider="route53")
+    stck.secrets.set("infra", "DNS_API_TOKEN", TOKEN)
+    if configured:
+        stck.secrets.set("infra", "AWS_ACCESS_KEY_ID", "existing-access")
+        stck.secrets.set("infra", "AWS_SECRET_ACCESS_KEY", "existing-secret")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    replies = iter(["new-access", "new-secret"])
+    prompts = []
+
+    def answer(prompt):
+        prompts.append(prompt)
+        return next(replies)
+
+    monkeypatch.setattr(getpass, "getpass", answer)
+    path = REPO / "stacklets" / "infra" / "hooks" / "on_configure.py"
+    spec = importlib.util.spec_from_file_location("infra_on_configure", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.run(StackContext(stck, "infra", {}))
+    assert len(prompts) == (0 if configured else 2)
+    assert stck.secrets.get("infra", "AWS_SECRET_ACCESS_KEY") == (
+        "existing-secret" if configured else "new-secret")

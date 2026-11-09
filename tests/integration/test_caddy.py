@@ -55,6 +55,9 @@ def _caddy(image: str, caddyfile: Path, *args: str) -> subprocess.CompletedProce
         ["docker", "run", "--rm",
          "-e", f"STACK_DOMAIN={DOMAIN}",
          "-e", f"DNS_API_TOKEN={FAKE_TOKEN}",
+         "-e", "AWS_ACCESS_KEY_ID=fabricated-access-key",
+         "-e", "AWS_SECRET_ACCESS_KEY=fabricated-secret-key",
+         "-e", "AWS_REGION=us-east-1",
          "-v", f"{caddyfile}:/etc/caddy/Caddyfile:ro",
          image, "caddy", *args, "--config", "/etc/caddy/Caddyfile"],
         capture_output=True, text=True, timeout=180,
@@ -176,6 +179,50 @@ def test_every_certificate_is_requested_through_the_providers_dns(infra_image, t
     # Still the placeholder: the token is read from the environment at
     # request time, so it is not in the config Caddy's admin endpoint serves.
     assert FAKE_TOKEN not in json.dumps(config)
+    assert "fabricated-secret-key" not in json.dumps(config)
+
+
+@pytest.mark.parametrize("bind_ip", ["0.0.0.0", "100.64.0.10"])
+def test_compose_restricts_only_the_proxy_and_passes_aws_credentials(tmp_path, bind_ip):
+    """Resolve the shipped compose file, without binding ports or touching live infra."""
+    from stack import Stack
+
+    (tmp_path / "stack.toml").write_text(
+        '[core]\ndomain = "home.example.family"\ndns_provider = "route53"\n'
+        f'extension_dirs = ["{tmp_path / "ext"}"]\n'
+        f'[infra]\nproxy_bind_ip = "{bind_ip}"\naws_region = "eu-west-1"\n')
+    stck = Stack(root=REPO_ROOT, data=tmp_path / "data", instance_dir=tmp_path)
+    stck.secrets.set("infra", "AWS_ACCESS_KEY_ID", "fabricated-access-key")
+    stck.secrets.set("infra", "AWS_SECRET_ACCESS_KEY", "fabricated-secret-key")
+    result = subprocess.run(
+        ["docker", "compose", "-f", str(REPO_ROOT / "stacklets/infra/docker-compose.yml"),
+         "config", "--format", "json"],
+        env={**os.environ, **stck.env("infra")},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    services = json.loads(result.stdout)["services"]
+    proxy = services["stack-infra-caddy"]
+    assert {(p["host_ip"], p["published"], p["protocol"]) for p in proxy["ports"]} == {
+        (bind_ip, "80", "tcp"), (bind_ip, "443", "tcp"), (bind_ip, "443", "udp")}
+    assert proxy["environment"]["AWS_ACCESS_KEY_ID"] == "fabricated-access-key"
+    assert proxy["environment"]["AWS_SECRET_ACCESS_KEY"] == "fabricated-secret-key"
+    assert proxy["environment"]["AWS_REGION"] == "eu-west-1"
+    dns_ports = services["stack-infra-adguard"]["ports"]
+    assert {p["host_ip"] for p in dns_ports if p["target"] == 53} == {"0.0.0.0"}
+    assert {p["host_ip"] for p in dns_ports if p["target"] != 53} == {"127.0.0.1"}
+
+
+def test_certificate_checks_can_bypass_local_dns_rewrites(infra_image, tmp_path):
+    path = tmp_path / "Caddyfile"
+    path.write_text(assemble(_shipped_snippets(), dns_provider="route53",
+                             dns_resolvers=["1.1.1.1"]))
+    config = _adapt(infra_image, path)
+    challenges = [issuer["challenges"]["dns"]
+                  for policy in config["apps"]["tls"]["automation"]["policies"]
+                  for issuer in policy["issuers"]]
+    assert challenges
+    assert all(c["resolvers"] == ["1.1.1.1"] for c in challenges)
 
 
 def test_caddy_asks_for_the_wildcard_and_the_bare_domain_and_nothing_else(infra_image, tmp_path):

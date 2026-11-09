@@ -203,6 +203,8 @@ Available template variables:
 | `{ai_default_model}` | `stack.toml` → `[ai].default` |
 | `{ai_tts_voice}` | Derived from `[ai].language` |
 | `{messages_server_name}` | `stack.toml` → `[messages].server_name` |
+| `{infra_proxy_bind_ip}` | `stack.toml` → `[infra].proxy_bind_ip`, default `"0.0.0.0"`; host interface for Caddy's published ports only |
+| `{infra_aws_region}` | `stack.toml` → `[infra].aws_region`, default `"us-east-1"`; AWS region for Route53 |
 | `{url}`, `{<id>_url}`, `{home_url}` | Public URLs: `http://<ip>:<port>` in port mode; `https://<id>.<domain>` in domain mode once `[core].dns_provider` is set, `http://` before that |
 | `{browser_url}` | The address to open in a browser on this Mac: `{url}` in domain mode, `http://localhost:<port>` in port mode, because a web app that needs WebCrypto (Element) only runs over HTTPS or on localhost |
 | `{url_host}` | The host of `{url}`: `<id>.<domain>` in domain mode, `{ip}` in port mode. For a protocol the stacklet serves under the same name besides HTTP, such as Forgejo's SSH |
@@ -1168,7 +1170,7 @@ the rest of infra's data.
 
 ### TLS
 
-`[core] dns_provider` (`"hetzner"` or `"cloudflare"`) turns on HTTPS. The
+`[core] dns_provider` (`"hetzner"`, `"cloudflare"` or `"route53"`) turns on HTTPS. The
 global block then makes Let's Encrypt the issuer for every certificate,
 through a DNS-01 challenge at that provider:
 
@@ -1194,6 +1196,29 @@ it in a terminal. It reaches Caddy as an environment variable and is read
 when a certificate is requested, so it appears neither in the Caddyfile
 nor in the config Caddy serves on its admin endpoint. infra's `on_start`
 refuses a provider the image has no plugin for, or a missing token.
+
+Route53's issuer uses `dns route53`, without a token argument. Its AWS SDK
+reads `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from the environment.
+`stack infra dns-token` stores both as infra secrets with the same names.
+Interactive input is hidden; piped input is two lines, access key ID then
+secret access key. An incomplete pair leaves stored credentials unchanged.
+The first-run prompt and the start hook check both, independently of any
+stored `DNS_API_TOKEN`. This command configures long-lived IAM access keys,
+not temporary session credentials. `AWS_REGION` comes from
+`[infra] aws_region`, default `us-east-1`.
+
+`[infra] dns_resolvers` is a list of DNS servers for certificate checks,
+for example `["1.1.1.1"]` to bypass local wildcard DNS rewrites. The runtime
+emits the issuer's `resolvers` directive for any provider when this list
+is nonempty. An empty list (the default) uses Caddy's default resolver.
+This does not configure AdGuard's upstream DNS servers.
+
+Caddy's published ports (80/TCP, 443/TCP and 443/UDP) bind to
+`[infra] proxy_bind_ip`, default `0.0.0.0`. Set it to the Mac's VPN IPv4
+address for VPN-only access, and point DNS records there. The address must
+be available when the proxy starts. This applies to every Caddy site,
+including `Caddyfile.local`; it does not change AdGuard's DNS bindings or
+`PORT_BIND_IP`, which keeps backend services on loopback in domain mode.
 
 With `dns_provider` set, the URLs the runtime renders (`{url}`,
 `{<id>_url}`, `{home_url}`) are `https://`. `[core] https = true` does the
@@ -1276,8 +1301,8 @@ name          = "famstack"            # product name: CLI branding and
                                       # as <name>-data gets it written on
                                       # the next command.
 domain        = ""                    # empty = port mode
-dns_provider  = ""                    # domain mode: "hetzner" or
-                                      # "cloudflare" serves HTTPS with
+dns_provider  = ""                    # domain mode: "hetzner", "cloudflare"
+                                      # or "route53" serves HTTPS with
                                       # certificates via DNS-01; empty
                                       # serves plain HTTP. The API token
                                       # is a secret (`stack infra
@@ -1297,6 +1322,11 @@ shared_bucket = "family"              # slug for the shared/institutional
                                       # live at <vault>/<localpart>/. Default
                                       # "family" fits famstack; non-family
                                       # deployments override.
+
+[infra]
+proxy_bind_ip = "0.0.0.0"      # Caddy only; a VPN IPv4 address restricts it
+dns_resolvers = []             # certificate DNS checks, e.g. ["1.1.1.1"]
+aws_region = "us-east-1"       # Route53; credentials are infra secrets
 
 [updates]
 schedule = "0 0 3 * * *"        # Watchtower cron (3am nightly)

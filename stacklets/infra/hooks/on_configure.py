@@ -1,15 +1,17 @@
-"""First run: say what infra takes on, then ask for the DNS token if needed.
+"""First run: say what infra takes on, then ask for DNS credentials if needed.
 
 Infra is DNS and the entry point for the whole home network, which no
 other stacklet is, so its first `stack up` says so once, through the
 same warning channel as a stacklet's stage.
 
-The DNS provider's API token is asked for only in a terminal. Anywhere
+The DNS provider's credentials are asked for only in a terminal. Anywhere
 else on_start stops the start and names the command that stores the
-token, which is also how it is replaced later.
+credentials, which is also how they are replaced later.
 """
 
 import sys
+
+from stack.caddy import DNS_CREDENTIALS
 
 NETWORK_WARNING = (
     "Infrastructure runs DNS and the entry point for your whole network. "
@@ -25,7 +27,10 @@ NETWORK_WARNING = (
 def run(ctx):
     ctx.warn(NETWORK_WARNING)
 
-    if not ctx.stack._cfg("core", "dns_provider") or ctx.secret("DNS_API_TOKEN"):
+    provider = ctx.stack._cfg("core", "dns_provider")
+    if provider not in DNS_CREDENTIALS:
+        return
+    if all(ctx.secret(name) for name in DNS_CREDENTIALS[provider]):
         return
     if not sys.stdin.isatty():
         return

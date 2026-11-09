@@ -18,7 +18,7 @@ Set a domain in `stack.toml`, plus a DNS provider if you want HTTPS:
 ```toml
 [core]
 domain       = "home.example.family"
-dns_provider = "hetzner"     # or "cloudflare"; empty serves plain HTTP
+dns_provider = "hetzner"     # or "cloudflare", "route53"; empty serves plain HTTP
 ```
 
 Then:
@@ -44,6 +44,26 @@ Add both as DNS rewrites in AdGuard (Filters > DNS rewrites). That is what the L
 
 Give the Mac a fixed LAN IP with a DHCP reservation on the router, or every record goes stale when it changes.
 
+### Restricting the proxy to a VPN interface
+
+Caddy publishes ports 80/TCP and 443/TCP+UDP on all host interfaces by default.
+To serve only through a VPN such as Tailscale, set the Mac's VPN address in
+`stack.toml` before running `stack up infra`:
+
+```toml
+[infra]
+proxy_bind_ip = "100.64.0.10"  # replace with this Mac's Tailscale IPv4 address
+```
+
+Point the public DNS records at that same address. DNS-01 certificates work
+without opening internet-facing ports. The VPN must be connected and the
+address available before Caddy starts. This restricts every site behind Caddy,
+including sites in `Caddyfile.local`, not just one hostname.
+
+This setting does not change AdGuard's port 53 bindings or the loopback
+bindings of the services behind the proxy. AdGuard is a separate LAN DNS
+service; restricting the proxy does not make the entire stacklet VPN-only.
+
 ## TLS
 
 With `dns_provider` set, Caddy serves every service over HTTPS with two certificates from Let's Encrypt: a wildcard for `*.<domain>`, which every stacklet's subdomain uses, and one for the bare domain. It proves you own the domain by writing a TXT record through the provider's API (a DNS-01 challenge), so nothing on your LAN has to be reachable from the internet. The domain has to be registered, with its DNS zone hosted at that provider.
@@ -54,12 +74,30 @@ With `dns_provider` set, Caddy serves every service over HTTPS with two certific
 |---|---|
 | `hetzner` | A Hetzner Cloud API token with Read & Write access, created in the Hetzner Console project that holds the zone (Security > API tokens). A token from the old DNS Console at dns.hetzner.com does not work. |
 | `cloudflare` | A Cloudflare API token with `Zone.Zone:Read` and `Zone.DNS:Edit`, limited to this zone. |
+| `route53` | An AWS access key ID and secret access key for an IAM principal allowed to manage the zone's ACME TXT records. See the [Route53 plugin's restricted IAM policy](https://github.com/caddy-dns/route53#authenticating). |
 
 ### Where the token lives
 
 In `.stack/secrets.toml` as `infra__DNS_API_TOKEN`, never in `stack.toml`. It reaches the Caddy container as the environment variable `DNS_API_TOKEN` and does not appear in the Caddyfile. Nothing prints it; `stack infra dns-token` reports its length only.
 
 The first `stack up infra` asks for it in a terminal. Without a token, or with a provider the image has no plugin for, `stack up infra` stops and says what to do.
+
+Route53 uses two secrets instead: `infra__AWS_ACCESS_KEY_ID` and
+`infra__AWS_SECRET_ACCESS_KEY`. The same command asks for both with hidden
+input, and Caddy reads them through the AWS SDK's environment variables.
+Use long-lived IAM access keys; temporary session credentials are not
+configured by this command. The region defaults to `us-east-1`; set
+`[infra] aws_region` to use another AWS region.
+
+For split DNS or local wildcard rewrites, set `[infra] dns_resolvers = ["1.1.1.1"]`
+to check certificate DNS records against an explicit public resolver.
+The default empty list uses Caddy's default resolver. This setting affects
+certificate checks for every provider, not AdGuard's upstream DNS servers.
+
+When stdin is piped, `stack infra dns-token` reads one line for
+Hetzner/Cloudflare, or two lines for Route53 (access key ID, then secret
+access key). Missing input leaves the stored credentials unchanged. Avoid
+putting credentials in shell history or passing them as command arguments.
 
 ### Rotating it
 
