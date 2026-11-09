@@ -212,6 +212,26 @@ class TestComposeBuildRefreshesBaseImages:
         assert "--pull" in pulled
         assert cached[cached.index("build"):] == ["build"]
 
+    def test_a_failed_cached_build_is_reported_to_the_caller(self):
+        from stack import docker
+        import subprocess
+
+        with patch("subprocess.run", side_effect=[
+            subprocess.CompletedProcess([], 1),
+            subprocess.CompletedProcess([], 1),
+        ]):
+            assert docker.compose_build("/tmp/compose.yml") == 1
+
+    def test_a_successful_cached_build_allows_startup(self):
+        from stack import docker
+        import subprocess
+
+        with patch("subprocess.run", side_effect=[
+            subprocess.CompletedProcess([], 1),
+            subprocess.CompletedProcess([], 0),
+        ]):
+            assert docker.compose_build("/tmp/compose.yml") == 0
+
 
 class TestComposePullFetchesOnlyWhatIsMissing:
     """The pull runs on every `stack up`, so a release that moves a service

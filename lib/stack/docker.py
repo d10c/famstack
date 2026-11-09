@@ -107,14 +107,15 @@ def compose_pull(compose_file: str | Path, env: dict | None = None) -> None:
     )
 
 
-def compose_build(compose_file: str | Path, env: dict | None = None) -> None:
-    """Build images for a compose file, on current base images. Streams output.
+def compose_build(compose_file: str | Path, env: dict | None = None) -> int:
+    """Build images on current base images. Stream output and return the exit code.
 
     Without `--pull` the build cache keeps the base image it first pulled
     for good, and Watchtower does not update built images, so the base
     would never be patched. With it, a new base means a rebuild and an
     unchanged one costs a registry lookup. Offline the pull fails, and
-    the build runs again from what is cached so the stacklet still starts.
+    the build runs again from what is cached. Both builds failing must
+    stop startup, not reuse an old image under a new source stamp.
     """
     full_env = {**__import__("os").environ, **(env or {})}
     pulled = _docker(
@@ -122,10 +123,11 @@ def compose_build(compose_file: str | Path, env: dict | None = None) -> None:
         timeout=600, env=full_env,
     )
     if pulled.returncode != 0:
-        _docker(
+        pulled = _docker(
             "compose", "-f", str(compose_file), "build",
             timeout=600, env=full_env,
         )
+    return pulled.returncode
 
 
 def exec_in(container: str, *cmd: str) -> tuple[int, str]:

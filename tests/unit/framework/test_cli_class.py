@@ -417,6 +417,39 @@ class TestUpFailureNamesTheCause:
         assert "Bind for 0.0.0.0:42080 failed: port is already allocated" in capsys.readouterr().err
 
 
+class TestFailedBuildPreservesRunningContainers:
+    """A failed rebuild must not start an old image with a new source stamp."""
+
+    @pytest.mark.parametrize("installed", [False, True])
+    def test_build_failure_exits_without_recreating_containers(self, tmp_path, installed):
+        import subprocess
+        from argparse import Namespace
+        from stack.cli import handle_up
+
+        cli, output = _make_cli(tmp_path, {"myapp": {}})
+        directory = tmp_path / "stacklets" / "myapp"
+        manifest = directory / "stacklet.toml"
+        manifest.write_text(manifest.read_text() + "build = true\n")
+        (directory / "docker-compose.yml").write_text(
+            "name: stack-myapp\nservices: {}\n")
+        marker = tmp_path / ".stack" / "myapp.setup-done"
+        if installed:
+            marker.touch()
+
+        def run_command(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 1 if "build" in argv else 0)
+
+        with patch("subprocess.run", side_effect=run_command), \
+             patch("stack.docker.compose_up", return_value=(0, "")) as start:
+            with pytest.raises(SystemExit) as exc:
+                handle_up(cli.stack, Namespace(stacklet=["myapp"], no_voice=False))
+
+        assert exc.value.code == 1
+        start.assert_not_called()
+        assert marker.exists() == installed
+        assert not any("Starting containers" in step for step in output.steps)
+
+
 class TestDestroyAfterAFailedFirstUp:
     """A first `stack up` can fail after compose has started containers,
     on a port conflict for instance. The stacklet is then not installed

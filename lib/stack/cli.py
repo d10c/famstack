@@ -265,8 +265,15 @@ class CLI:
             with self.stack.output.spinner("Pulling images"):
                 docker.compose_pull(compose_file, env=compose_env)
             if manifest.get("build"):
-                with self.stack.output.spinner("Building service"):
-                    docker.compose_build(compose_file, env=compose_env)
+                with self.stack.output.spinner("Building service") as sp:
+                    code = docker.compose_build(compose_file, env=compose_env)
+                    if code != 0:
+                        sp.fail("Build failed")
+                        return {
+                            "error": f"Failed to build services (exit {code})",
+                            "hint": "See the Docker build output above. "
+                                    "Containers were not recreated.",
+                        }
 
             with self.stack.output.spinner("Starting containers"):
                 code, err = docker.compose_up(compose_file, env=compose_env)
