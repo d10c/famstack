@@ -13,9 +13,11 @@ rebuilds will keep working over.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -47,7 +49,68 @@ from wiki import (  # noqa: E402
     _topic_preamble,
     _with_diary_link,
     _yaml_str,
+    run,
 )
+from stack.ai.client import LLM  # noqa: E402
+
+
+class TestEmptyWiki:
+    @pytest.mark.parametrize("flags", [[], ["--home"]])
+    @pytest.mark.parametrize("lang, message", [
+        ("en", "File a document or save a note in chat"),
+        ("de", "Dokument im Chat"),
+    ])
+    def test_homepage_explains_how_to_start_without_calling_ai(
+        self, tmp_path, monkeypatch, httpserver, flags, lang, message,
+    ):
+        monkeypatch.setenv("BRAIN_REPO_DIR", str(tmp_path))
+        monkeypatch.setenv("LANGUAGE", lang)
+        monkeypatch.setenv("OPENAI_URL", httpserver.url_for("/v1"))
+        monkeypatch.setenv("OPENAI_KEY", "test-key")
+
+        assert asyncio.run(run(LLM.from_env(), flags)) == 0
+
+        home = (tmp_path / "index.md").read_text()
+        assert message in home
+        assert _page_frontmatter(home)["generated"] is True
+        assert httpserver.log == []
+
+    def test_preview_does_not_replace_a_handwritten_welcome(
+        self, tmp_path, monkeypatch, httpserver, capsys,
+    ):
+        home = tmp_path / "index.md"
+        original = (
+            "---\ntitle: Our home\n---\n\nWelcome home.\n\n"
+            "<!-- begin: generated -->\nOld overview.\n<!-- end: generated -->\n"
+        )
+        home.write_text(original)
+        monkeypatch.setenv("BRAIN_REPO_DIR", str(tmp_path))
+        monkeypatch.setenv("LANGUAGE", "en")
+        monkeypatch.setenv("OPENAI_URL", httpserver.url_for("/v1"))
+        monkeypatch.setenv("OPENAI_KEY", "test-key")
+        llm = LLM.from_env()
+
+        assert asyncio.run(run(llm, ["--home", "--dry-run"])) == 0
+        assert "File a document or save a note in chat" in capsys.readouterr().out
+        assert home.read_text() == original
+
+        assert asyncio.run(run(llm, ["--home"])) == 0
+        assert "Welcome home." in home.read_text()
+        assert "File a document or save a note in chat" in home.read_text()
+        assert "Old overview." not in home.read_text()
+        assert _page_frontmatter(home.read_text())["title"] == "Our home"
+        assert httpserver.log == []
+
+    def test_a_missing_topic_does_not_generate_the_homepage(
+        self, tmp_path, monkeypatch, httpserver,
+    ):
+        monkeypatch.setenv("BRAIN_REPO_DIR", str(tmp_path))
+        monkeypatch.setenv("OPENAI_URL", httpserver.url_for("/v1"))
+        monkeypatch.setenv("OPENAI_KEY", "test-key")
+
+        assert asyncio.run(run(LLM.from_env(), ["--topic", "camping"])) == 1
+        assert not (tmp_path / "index.md").exists()
+        assert httpserver.log == []
 
 
 def _frontmatter(preamble: str) -> dict:

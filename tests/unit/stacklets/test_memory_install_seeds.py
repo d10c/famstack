@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent
                        / "stacklets" / "memory"))
@@ -269,11 +270,13 @@ class TestEnsureBrainRepo:
 
 
 class TestSeedBrain:
-    """Brain carries only a .gitignore + README scaffold; the rest fills
-    in from the mirror. Idempotent: present files are left alone."""
+    """The wiki has a landing page before any captures arrive.
 
-    def test_pushes_both_scaffold_files_when_empty(self, httpserver):
-        for repo_path in (".gitignore", "README.md"):
+    Present pages, including a family's own homepage, are left alone.
+    """
+
+    def test_seeds_a_homepage_before_the_first_filing(self, httpserver):
+        for repo_path in (".gitignore", "README.md", "index.md"):
             httpserver.expect_request(
                 f"/api/v1/repos/{REPO_OWNER}/{BRAIN_REPO_NAME}/contents/{repo_path}",
                 method="GET",
@@ -285,11 +288,18 @@ class TestSeedBrain:
 
         result = seed_brain(_admin_client(httpserver))
 
-        assert sorted(result["created"]) == [".gitignore", "README.md"]
+        assert sorted(result["created"]) == [".gitignore", "README.md", "index.md"]
         assert result["skipped"] == []
+        request = next(r for r, _ in httpserver.log
+                       if r.method == "POST" and r.path.endswith("/index.md"))
+        home = base64.b64decode(request.json["content"]).decode()
+        assert "File a document or save a note in chat" in home
+        assert yaml.safe_load(home.split("---")[1])["generated"] is True
+        assert "<!-- begin: generated -->" in home
+        assert "<!-- end: generated -->" in home
 
     def test_skips_present_files(self, httpserver):
-        for repo_path in (".gitignore", "README.md"):
+        for repo_path in (".gitignore", "README.md", "index.md"):
             httpserver.expect_request(
                 f"/api/v1/repos/{REPO_OWNER}/{BRAIN_REPO_NAME}/contents/{repo_path}",
                 method="GET",
@@ -298,7 +308,7 @@ class TestSeedBrain:
         result = seed_brain(_admin_client(httpserver))
 
         assert result["created"] == []
-        assert sorted(result["skipped"]) == [".gitignore", "README.md"]
+        assert sorted(result["skipped"]) == [".gitignore", "README.md", "index.md"]
 
 
 class TestEnsureBrainProjectionAdmin:
@@ -321,7 +331,7 @@ class TestEnsureBrainProjectionAdmin:
             "/api/v1/users/stackadmin/tokens", method="POST",
         ).respond_with_json({"sha1": "migration-token"}, status=201)
 
-        for repo_path in (".gitignore", "README.md"):
+        for repo_path in (".gitignore", "README.md", "index.md"):
             httpserver.expect_request(
                 f"/api/v1/repos/{REPO_OWNER}/{BRAIN_REPO_NAME}/contents/{repo_path}",
                 method="GET",
@@ -354,7 +364,7 @@ class TestEnsureBrainProjectionAdmin:
         )
 
         assert result["created_brain_repo"] is True
-        assert sorted(result["brain_seeds"]["created"]) == [".gitignore", "README.md"]
+        assert sorted(result["brain_seeds"]["created"]) == [".gitignore", "README.md", "index.md"]
         assert result["memory_purge"] == {"deleted": []}
         assert result["cloned_brain"] is True
         assert cloned["path"] == brain

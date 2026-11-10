@@ -85,17 +85,17 @@ ORG_DESCRIPTION = (
 # The projection repo. `family/brain` is the derived mirror of memory's
 # source plus every generated wiki page; Quartz renders it. It is fully
 # disposable — the curator rebuilds it from memory at any time — so it
-# carries only a minimal seed (.gitignore + a README); the rest of its
-# content arrives through the mirror. Memory stays source-only and is
-# never written by generation.
+# carries a minimal scaffold and an empty homepage; source content arrives
+# through the mirror. Memory stays source-only and is never written by
+# generation.
 BRAIN_REPO_NAME = "brain"
 BRAIN_REPO_DESCRIPTION = (
     "The family wiki, projected from memory. Generated and disposable — "
     "Quartz renders this; edit the source in the memory repo instead."
 )
 
-# Brain's seed. Kept inline rather than in a seeds dir because it is two
-# files and the projection fills in everything else. The .gitignore
+# Brain's seed. Kept inline because the projection fills in everything
+# beyond the scaffold and homepage. The .gitignore
 # matches memory's so an Obsidian clone of either repo behaves the same.
 BRAIN_SEED_GITIGNORE = (
     "# Projection repo — rendered by Quartz, rebuilt from memory.\n"
@@ -1393,23 +1393,43 @@ def ensure_brain_repo(client: ForgejoClient) -> dict:
     return {"created_repo": not repo_existed}
 
 
+def empty_home(lang: str = "en") -> str:
+    """The wiki's first-filing guidance, shared by setup and regeneration."""
+    if lang == "de":
+        return (
+            "# Familienwissen\n\n"
+            "Dein Wiki ist bereit für seine erste Zusammenfassung. "
+            "Reiche ein Dokument im Chat ein oder speichere eine Notiz, "
+            "um eure Familienübersicht aufzubauen.\n"
+        )
+    return (
+        "# Family Memory\n\n"
+        "Your wiki is ready for its first summary. "
+        "File a document or save a note in chat to build your family overview.\n"
+    )
+
+
 def seed_brain(
     client: ForgejoClient,
     *,
     author_name: Optional[str] = None,
     author_email: Optional[str] = None,
 ) -> dict:
-    """Push brain's minimal seed (.gitignore + README) if missing.
+    """Push brain's scaffold and empty homepage if missing.
 
-    Only the two scaffold files — everything else in brain arrives
-    through the curator's mirror. Files already present are left alone,
-    so this is idempotent and never clobbers a projection in progress.
+    The homepage is marked generated so source reconciliation leaves it
+    in place until the first filing can produce an overview. Files already
+    present are left alone, including a hand-written homepage.
     """
     created: list[str] = []
     skipped: list[str] = []
     seed = {
         ".gitignore": BRAIN_SEED_GITIGNORE,
         "README.md": BRAIN_SEED_README,
+        "index.md": (
+            "---\ntitle: Family Memory\ngenerated: true\n---\n\n"
+            f"<!-- begin: generated -->\n\n{empty_home()}\n<!-- end: generated -->\n"
+        ),
     }
     for repo_path, content in seed.items():
         existing = client.get_file(REPO_OWNER, BRAIN_REPO_NAME, repo_path)

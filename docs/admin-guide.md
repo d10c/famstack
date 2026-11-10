@@ -570,6 +570,8 @@ Forgejo: a community fork of Gitea. Lightweight private git server.
 
 The persistent layer of the household brain: a curated knowledge vault, rendered as a browsable family wiki. Needs the `code` stacklet.
 
+Before the first filing, the wiki shows a landing page explaining how to add a document or note in chat. An empty wiki needs no model call to create its homepage; existing handwritten welcome text is preserved during regeneration.
+
 **Why a wiki?** Filed documents are answers waiting for questions. The memory stacklet turns what the archivist files into a wiki of your family life: a home page, a page per family member, topic pages, correspondents. Everything lives as Markdown in the `family/memory` Forgejo repo, so every change is a git commit you can review or revert. Prefer Obsidian? Clone the repo and open it as a vault; the wiki is just a nicer pair of eyes on the same files.
 
 ```bash

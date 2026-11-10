@@ -71,6 +71,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from memory.lib import (  # noqa: E402
     _parse_frontmatter,
+    empty_home,
     extract_summary_callout,
 )
 from stack.vault import correspondents_dir, slug, slugify_person  # noqa: E402
@@ -291,8 +292,18 @@ async def run(llm: LLM, argv: list[str]) -> int:
     # each member page reads its slice. No re-walking per member.
     index = _index_vault(vault)
     if not index:
-        _err("no documents with summary callouts found in vault")
-        return 1
+        if not home_sel and (topics_only or members_sel or members_all
+                             or topics_sel or correspondents_sel):
+            _err("no documents with summary callouts found in vault")
+            return 1
+        page = empty_home(lang)
+        if dry_run:
+            print(page)
+            return 0
+        return _publish(
+            page, target_path="index.md",
+            default_preamble="---\ntitle: Family Memory\n---",
+        )
 
     # The people the wiki carries a page for, all of whom the home page
     # lists: the person files once the family has them, the
