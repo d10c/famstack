@@ -51,7 +51,7 @@ COPY runtime/ /app/runtime/
 # See client/stack and stacklets/core/famstack-api.py.
 COPY client/stack /usr/local/bin/stack
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/stack && chown -R nanobot:nanobot /app
+RUN chmod 755 /usr/local/bin/entrypoint.sh /usr/local/bin/stack && chown -R nanobot:nanobot /app
 
 USER nanobot
 ENV HOME=/home/nanobot
