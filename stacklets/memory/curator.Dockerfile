@@ -19,7 +19,9 @@
 
 FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# CDN package transfers can terminate early; use a Debian-listed mirror.
+RUN sed -i 's|http://deb.debian.org|https://mirror.csclub.uwaterloo.ca|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     git tzdata ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
