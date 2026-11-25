@@ -33,6 +33,7 @@ you need.
 stacklets/photos/
   stacklet.toml          ← manifest (required)
   docker-compose.yml     ← container definitions
+  env.py                 ← optional stacklet-owned derived environment
   caddy.snippet          ← reverse proxy route (domain mode)
   hooks/
     on_configure.py      ← first run: interactive prompts
@@ -54,6 +55,7 @@ there, it's used. If it's not, it's skipped. Hooks can be `.py`
 |---|---|---|
 | `stacklet.toml` | Always read | Identity, config, dependencies |
 | `docker-compose.yml` | `stack up` / `stack down` | Container definitions |
+| `env.py` | Environment rendering | Optional `render(config, env)` hook for service-specific derived variables |
 | `caddy.snippet` | Caddyfile assembly (domain mode) | Reverse proxy route |
 | `hooks/on_configure` | Once on first `stack up` | Interactive prompts (API keys, server names) |
 | `hooks/on_install` | Once on first `stack up` | Create directories, install native deps |
@@ -151,6 +153,13 @@ secrets, so re-enabling reuses the same credentials.
 **`defaults`** — key-value pairs with `{template}` variables. Rendered
 against `stack.toml` values on every `stack up`. The rendered output is
 written to the stacklet's `.env` file.
+
+**`env.py`** — optional service-owned environment derivation. It defines
+`render(config, env)` and returns the final environment dictionary. Use it
+when one safe `stack.toml` setting must produce service-specific variables
+that static templates cannot express. For example, the docs stacklet turns
+one `[docs].ocr_languages` list into Paperless's `+`-joined OCR selection and
+space-separated extra language packages.
 
 Available template variables:
 
@@ -947,6 +956,10 @@ default    = "mlx-community/Qwen2.5-14B-Instruct-4bit"
 whisper_url = "http://localhost:6111/v1"
 language   = "en"
 
+[docs]
+# Tesseract codes. Unset keeps the existing deu+eng default.
+ocr_languages = ["deu", "eng", "nld", "srp", "srp_latn", "urd"]
+
 [backup]
 # One block per destination. Engine name selects the implementation.
 [backup.targets.vault]
@@ -954,6 +967,13 @@ engine   = "external-disk"
 disk     = "backup-vault"
 schedule = "0 2 * * *"
 ```
+
+`[docs].ocr_languages` is a non-empty list of Tesseract OCR codes. The docs
+stacklet derives `PAPERLESS_OCR_LANGUAGE` by joining the codes with `+` and
+`PAPERLESS_OCR_LANGUAGES` from packages not bundled with Paperless. Relevant
+codes include `nld` (Dutch), `srp` (Serbian Cyrillic), `srp_latn` (Serbian
+Latin), and `urd` (Urdu). Enabling more languages increases OCR CPU time.
+Run `stack restart docs` after changing the list.
 
 `[backup.targets.<name>]` defines one destination. `<name>` is the user's
 label for that destination (any string). The required `engine` field
