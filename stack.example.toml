@@ -146,6 +146,13 @@ language = "en"
 # allow = ["kettle"]
 # allow = ["kettle status", "kettle boil"]
 
+[docs]
+# Tesseract OCR language codes. Multiple languages improve mixed-language
+# documents but cost more CPU per page. The default stays German + English
+# when this setting is omitted.
+# Dutch: nld; Serbian Cyrillic: srp; Serbian Latin: srp_latn; Urdu: urd.
+# ocr_languages = ["deu", "eng", "nld", "srp", "srp_latn", "urd"]
+
 [backup]
 # Nightly append-only backup of stacklet data. Enable the backup stacklet
 # (`stack up backup`) to install the cron entry that runs the sync and to

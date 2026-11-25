@@ -77,10 +77,12 @@ def run(args, stacklet, config):
     if not config["is_healthy"]():
         return {"error": "Messages is not running — start it with 'stack up messages'"}
 
-    # sys.argv: ['stack', 'messages', 'upload', <room>, <path>, ...]
-    room, path_str, sender, caption, err = _parse_argv(sys.argv[3:])
-    if err:
-        return {"error": err}
+    # Direct CLI calls supply the remaining arguments through the framework.
+    # Keep the sys.argv fallback for older in-process callers.
+    argv = args if args else sys.argv[3:]
+    room, path_str, sender, caption, err = _parse_argv(argv)
+    if err or room is None or path_str is None:
+        return {"error": err or "Invalid upload arguments"}
 
     path = Path(path_str)
     if not path.is_file():

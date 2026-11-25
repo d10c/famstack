@@ -643,6 +643,23 @@ class Stack:
         # 127.0.0.1 in domain mode (only Caddy reaches containers)
         rendered["PORT_BIND_IP"] = "127.0.0.1" if self._cfg("core", "domain") else "0.0.0.0"
 
+        # Stacklet-owned environment derivation. This keeps service-specific
+        # configuration knowledge beside the service while preserving the
+        # framework's single derived-env pipeline.
+        env_module = Path(s["path"]) / "env.py"
+        if env_module.exists():
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                f"{stacklet_id}.env", env_module
+            )
+            if spec is None or spec.loader is None:
+                raise RuntimeError(
+                    f"Cannot load environment renderer for {stacklet_id}"
+                )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            rendered = mod.render(self.config, rendered)
+
         return rendered
 
     # ── Single sign-on (OpenID Connect) ───────────────────────────────
@@ -1430,6 +1447,7 @@ class Stack:
                         "instance_dir": str(self.instance_dir),
                         "manifest": stacklet.get("manifest", {}),
                         "stack": self.config,
+                        "stack_instance": self,
                         "secrets": self.secrets.all(),
                         "users": load_users(self.instance_dir),
                         # Lazy health probe — plugins call config["is_healthy"]()

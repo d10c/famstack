@@ -396,6 +396,38 @@ On first setup, famstack seeds Paperless with common document categories and typ
 
 **Who sees what.** When family members sign in to Paperless through single sign-on, every account that is not a superuser joins the `all_documents` group: it sees the whole archive and may add, change and delete documents. The vocabulary (tags, correspondents, document types, storage paths) is shared with every member: entries have no owner, so everyone sees them by name. Members may add and rename tags, correspondents and document types, but not delete them. An entry a member creates in the Paperless UI belongs to that member, and stays private until they share it.
 
+#### OCR languages
+
+Paperless uses German and English OCR (`deu+eng`) when `[docs].ocr_languages` is unset. To recognize additional languages, add their Tesseract codes to `stack.toml`, then restart docs:
+
+```toml
+[docs]
+ocr_languages = ["deu", "eng", "nld", "srp", "srp_latn", "urd"]
+```
+
+```bash
+./stack restart docs
+```
+
+The commonly needed codes here are `nld` (Dutch), `srp` (Serbian Cyrillic), `srp_latn` (Serbian Latin), and `urd` (Urdu). famstack configures both Paperless's active OCR language list and the extra Tesseract packages required by languages not bundled in the Paperless image. More active OCR languages increase CPU time per page, so include only languages your archive needs.
+
+#### Bulk document import
+
+The document importer recursively scans PDF, scanned-image, Office, and OpenDocument files. Its manifest and cursor live under `data_dir/docs/import/`, outside the source tree. Every file is posted to the Matrix `#documents` room, so the archivist performs OCR, classification, source preservation, and wiki mirroring through the same path as a family upload.
+
+```bash
+./stack docs import --source /Volumes/archive/documents       # scan and save a manifest
+./stack docs import --status                                  # show all sources and progress
+./stack docs import --proceed 100                             # file the next 100 documents
+./stack docs import --proceed 10 --dry-run                    # preview without uploading
+./stack docs import --proceed 100 --as marge                  # preserve sender attribution
+./stack docs import --source /Volumes/archive/documents --proceed 100
+```
+
+The cursor is saved after every successful upload. If one file fails, the command exits with that filename and error, and the next run resumes at the failed file.
+
+Choose the front door by content: photos and videos go through `stack photos import`; scanned pages, PDFs, and Office documents go through `stack docs import`; existing structured Markdown and text belong in the memory vault/wiki workflow and should not be forced through OCR.
+
 **Memory vault.** With the `code` stacklet up, every filed document and every captured URL or pasted note also lands as a Markdown file in your Forgejo repo `family/memory`. Documents and correspondents live under the shared bucket (`family/` by default, configurable via `stack.toml [core] shared_bucket`). Personal captures route to the sender's own bucket: Homer's pastes end up under `homer/notes/` or `homer/bookmarks/`, Marge's under hers. Paperless stays the canonical store; the memory vault is the browsable, git-versioned human view. Install the [`memory` stacklet](#memory-memory-optional) to seed the ontology and render the vault as the family wiki.
 
 | | |
@@ -407,6 +439,7 @@ Useful commands:
 
 ```bash
 ./stack docs show <id>                     # current state
+./stack docs import --status               # bulk import progress
 ./stack docs classify <id>                 # re-run AI tagging
 ./stack docs reformat <id>                 # re-run OCR to clean markdown
 ./stack docs reprocess <id>                # full pipeline, respects bot.toml
